@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="sale_order_form_plugit_rate" model="ir.ui.view">
+        <field name="name">sale.order.form.plugit.rate</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+
+            <!-- ── Header: "Update Invoice Prices" button ───────────────── -->
+            <xpath expr="//header/field[@name='state']" position="before">
+                <button
+                    name="action_plugit_update_invoice_prices"
+                    string="Оновити ціни інвойсу"
+                    type="object"
+                    class="btn-warning"
+                    confirm="Перерахувати ціни та суми у пов'язаному інвойсі за поточним курсом?"
+                    invisible="not plugit_invoice_update_needed"/>
+            </xpath>
+
+            <!-- ── order_details: pricelist rate info ────────────────────── -->
+            <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="before">
+                <field name="plugit_invoice_update_needed" invisible="1"/>
+                <field name="plugit_pricelist_currency_id" invisible="1"/>
+                <label for="plugit_base_pricelist_id"
+                       string="Base Pricelist"
+                       invisible="not plugit_base_pricelist_id"/>
+                <field
+                    name="plugit_base_pricelist_id"
+                    nolabel="1"
+                    readonly="1"
+                    options="{'no_open': True}"
+                    invisible="not plugit_base_pricelist_id"/>
+                <label for="plugit_rate_label"
+                       string="Курс"
+                       invisible="not plugit_rate_label"/>
+                <field
+                    name="plugit_rate_label"
+                    nolabel="1"
+                    readonly="1"
+                    invisible="not plugit_rate_label"/>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>
