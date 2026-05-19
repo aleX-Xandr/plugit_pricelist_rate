@@ -82,7 +82,13 @@ class SaleOrderPlugitRate(models.Model):
 
     # ── Rate computation ──────────────────────────────────────────────
 
-    @api.depends('plugit_pricelist_currency_id', 'currency_id', 'date_order')
+    @api.depends(
+        'plugit_pricelist_currency_id',
+        'plugit_pricelist_currency_id.rate_ids.rate',
+        'currency_id',
+        'currency_id.rate_ids.rate',
+        'date_order',
+    )
     def _compute_plugit_rate(self):
         for order in self:
             pl_cur = order.plugit_pricelist_currency_id
