@@ -17,6 +17,11 @@
                     invisible="not plugit_invoice_update_needed"/>
             </xpath>
 
+            <!-- ── Make Order Date editable on confirmed orders ── -->
+            <xpath expr="//field[@name='date_order'][@nolabel='1'][not(@groups)]" position="attributes">
+                <attribute name="readonly">state == 'cancel' or locked</attribute>
+            </xpath>
+
             <!-- ── order_details: pricelist rate info ────────────────────── -->
             <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="before">
                 <field name="plugit_invoice_update_needed" invisible="1"/>

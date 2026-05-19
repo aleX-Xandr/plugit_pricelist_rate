@@ -40,12 +40,11 @@ class SaleOrderPlugitRate(models.Model):
         help='Відображення курсу у вигляді "41.50 UAH за 1 EUR"',
     )
 
-    # ── Pending invoice update flag ───────────────────────────────────
+    # ── Pending invoice update flag (computed, no DB column) ─────────
     plugit_invoice_update_needed = fields.Boolean(
         string='Invoice Update Needed',
-        default=False,
-        copy=False,
-        help='True — дата замовлення змінилась; інвойс ще не перераховано',
+        compute='_compute_plugit_invoice_update_needed',
+        help='True — курс замовлення відрізняється від курсу в інвойсі',
     )
 
     # ── Pricelist chain traversal ─────────────────────────────────────
@@ -119,19 +118,21 @@ class SaleOrderPlugitRate(models.Model):
                 pl_cur.name,
             )
 
-    # ── Track date changes → flag pending invoice update ─────────────
+    # ── Flag: order rate ≠ invoice rate ──────────────────────────────
 
-    def write(self, vals):
-        old_dates = {o.id: o.date_order for o in self}
-        result = super().write(vals)
-        if 'date_order' in vals:
-            for order in self:
-                if (
-                    order.date_order != old_dates.get(order.id)
-                    and order.invoice_ids.filtered(lambda i: i.state != 'cancel')
-                ):
-                    order.plugit_invoice_update_needed = True
-        return result
+    @api.depends('plugit_rate', 'invoice_ids.plugit_rate', 'invoice_ids.state')
+    def _compute_plugit_invoice_update_needed(self):
+        for order in self:
+            active_invoices = order.invoice_ids.filtered(
+                lambda i: i.state != 'cancel'
+            )
+            if not active_invoices or not order.plugit_rate:
+                order.plugit_invoice_update_needed = False
+                continue
+            order.plugit_invoice_update_needed = any(
+                abs((inv.plugit_rate or 0.0) - order.plugit_rate) > 1e-4
+                for inv in active_invoices
+            )
 
     # ── Copy rate to new invoice ──────────────────────────────────────
 
@@ -191,7 +192,6 @@ class SaleOrderPlugitRate(models.Model):
             if was_posted:
                 invoice.action_post()
 
-        self.plugit_invoice_update_needed = False
         self.message_post(
             body=_('Invoice prices recalculated. Rate: %.6f.', self.plugit_rate)
         )
