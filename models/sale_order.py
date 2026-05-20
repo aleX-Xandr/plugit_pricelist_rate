@@ -1,6 +1,6 @@
 import logging
 
-from odoo import Command, _, api, fields, models
+from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ class SaleOrderPlugitRate(models.Model):
     # ── Root pricelist (traversed chain) ─────────────────────────────
     plugit_base_pricelist_id = fields.Many2one(
         'product.pricelist',
-        string='Base Pricelist',
+        string='Базовий прайс-лист',
         compute='_compute_plugit_base_pricelist',
         store=True,
         readonly=True,
@@ -19,7 +19,7 @@ class SaleOrderPlugitRate(models.Model):
     )
     plugit_pricelist_currency_id = fields.Many2one(
         'res.currency',
-        string='Base Pricelist Currency',
+        string='Валюта базового прайс-листа',
         related='plugit_base_pricelist_id.currency_id',
         store=True,
         readonly=True,
@@ -27,7 +27,7 @@ class SaleOrderPlugitRate(models.Model):
 
     # ── Exchange rate ─────────────────────────────────────────────────
     plugit_rate = fields.Float(
-        string='Pricelist Rate',
+        string='Курс',
         digits=(16, 6),
         compute='_compute_plugit_rate',
         store=True,
@@ -35,16 +35,9 @@ class SaleOrderPlugitRate(models.Model):
         help='Скільки одиниць валюти замовлення за 1 одиницю базового прайс-листа',
     )
     plugit_rate_label = fields.Char(
-        string='Rate',
+        string='Курс',
         compute='_compute_plugit_rate_label',
         help='Відображення курсу у вигляді "41.50 UAH за 1 EUR"',
-    )
-
-    # ── Pending invoice update flag (computed, no DB column) ─────────
-    plugit_invoice_update_needed = fields.Boolean(
-        string='Invoice Update Needed',
-        compute='_compute_plugit_invoice_update_needed',
-        help='True — курс замовлення відрізняється від курсу в інвойсі',
     )
 
     # ── Pricelist chain traversal ─────────────────────────────────────
@@ -106,7 +99,7 @@ class SaleOrderPlugitRate(models.Model):
                     pl_cur, ord_cur, order.company_id, date,
                 )
             except Exception:
-                _logger.warning('Could not get conversion rate for order %s', order.name)
+                _logger.warning('Не вдалося отримати курс для замовлення %s', order.name)
                 rate = 1.0
             order.plugit_rate = rate
 
@@ -124,80 +117,9 @@ class SaleOrderPlugitRate(models.Model):
                 pl_cur.name,
             )
 
-    # ── Flag: order rate ≠ invoice rate ──────────────────────────────
-
-    @api.depends('plugit_rate', 'invoice_ids.plugit_rate', 'invoice_ids.state')
-    def _compute_plugit_invoice_update_needed(self):
-        for order in self:
-            active_invoices = order.invoice_ids.filtered(
-                lambda i: i.state != 'cancel'
-            )
-            if not active_invoices or not order.plugit_rate:
-                order.plugit_invoice_update_needed = False
-                continue
-            order.plugit_invoice_update_needed = any(
-                abs((inv.plugit_rate or 0.0) - order.plugit_rate) > 1e-4
-                for inv in active_invoices
-            )
-
     # ── Copy rate to new invoice ──────────────────────────────────────
 
     def _prepare_invoice(self):
         vals = super()._prepare_invoice()
         vals['plugit_rate'] = self.plugit_rate
         return vals
-
-    # ── Button: update linked invoice prices ─────────────────────────
-
-    def action_plugit_update_invoice_prices(self):
-        """Recalculate prices in all linked invoices using the current pricelist + date."""
-        self.ensure_one()
-
-        active_invoices = self.invoice_ids.filtered(lambda i: i.state != 'cancel')
-        if not active_invoices:
-            return
-
-        pricelist = self.pricelist_id
-        date = (
-            self.date_order.date()
-            if self.date_order
-            else fields.Date.today()
-        )
-
-        for invoice in active_invoices:
-            was_posted = invoice.state == 'posted'
-            if was_posted:
-                invoice.button_draft()
-
-            line_updates = []
-            for inv_line in invoice.invoice_line_ids.filtered(
-                lambda l: l.display_type == 'product' and l.sale_line_ids
-            ):
-                sale_line = inv_line.sale_line_ids[:1]
-                product = sale_line.product_id
-                uom = sale_line.product_uom_id
-                qty = sale_line.product_uom_qty or 1.0
-
-                if not pricelist or not product:
-                    continue
-
-                new_price = pricelist._get_product_price(
-                    product,
-                    qty,
-                    currency=self.currency_id,
-                    date=date,
-                    uom=uom,
-                )
-                line_updates.append(Command.update(inv_line.id, {'price_unit': new_price}))
-
-            if line_updates:
-                invoice.write({'invoice_line_ids': line_updates})
-
-            invoice.plugit_rate = self.plugit_rate
-
-            if was_posted:
-                invoice.action_post()
-
-        self.message_post(
-            body=_('Invoice prices recalculated. Rate: %.6f.', self.plugit_rate)
-        )

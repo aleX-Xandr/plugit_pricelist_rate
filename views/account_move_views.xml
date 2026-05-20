@@ -6,13 +6,7 @@
         <field name="inherit_id" ref="account.view_move_form"/>
         <field name="arch" type="xml">
 
-            <!-- Show rate below Invoice Date in the right header group -->
             <xpath expr="//group[@id='header_right_group']" position="inside">
-                <label
-                    for="plugit_rate"
-                    string="Pricelist Rate"
-                    invisible="not plugit_rate or plugit_rate == 1.0
-                               or move_type not in ['out_invoice', 'out_refund']"/>
                 <field
                     name="plugit_rate"
                     readonly="1"
